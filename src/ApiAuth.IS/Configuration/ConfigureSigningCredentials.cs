@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration;
 using Microsoft.Extensions.Configuration;
@@ -15,6 +16,10 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer
 {
     internal class ConfigureSigningCredentials : IConfigureOptions<ApiAuthorizationOptions>
     {
+        // We need to cast the underlying int value of the EphemeralKeySet to X509KeyStorageFlags
+        // due to the fact that is not part of .NET Standard. This value is only used with non-windows
+        // platforms (all .NET Core) for which the value is defined on the underlying platform.
+        private const X509KeyStorageFlags UnsafeEphemeralKeySet = (X509KeyStorageFlags)32;
         private const string DefaultTempKeyRelativePath = "obj/tempkey.json";
         private readonly IConfiguration _configuration;
         private readonly ILogger<ConfigureSigningCredentials> _logger;
@@ -73,15 +78,19 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer
 
         private X509KeyStorageFlags GetStorageFlags(KeyDefinition key)
         {
+            var defaultFlags = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
+                X509KeyStorageFlags.DefaultKeySet :
+                UnsafeEphemeralKeySet;
+
             if (key.StorageFlags == null)
             {
-                return X509KeyStorageFlags.DefaultKeySet;
+                return defaultFlags;
             }
 
             var flagsList = key.StorageFlags.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (flagsList.Length == 0)
             {
-                return X509KeyStorageFlags.DefaultKeySet;
+                return defaultFlags;
             }
 
             var result = ParseCurrentFlag(flagsList[0]);

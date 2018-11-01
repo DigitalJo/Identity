@@ -4,6 +4,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Testing.xunit;
 using Xunit;
@@ -12,19 +13,27 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
 {
     public class SigningKeysLoaderTests
     {
+        // We need to cast the underlying int value of the EphemeralKeySet to X509KeyStorageFlags
+        // due to the fact that is not part of .NET Standard. This value is only used with non-windows
+        // platforms (all .NET Core) for which the value is defined on the underlying platform.
+        private const X509KeyStorageFlags UnsafeEphemeralKeySet = (X509KeyStorageFlags)32;
+        private static readonly X509KeyStorageFlags DefaultFlags = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ?
+            X509KeyStorageFlags.DefaultKeySet :
+            X509KeyStorageFlags.DefaultKeySet;
+
         [Fact]
         public void LoadFromFile_ThrowsIfFileDoesNotExist()
         {
             // Arrange, Act & Assert           
-            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("c:\\nonexisting.pfx", "", X509KeyStorageFlags.DefaultKeySet));
-            Assert.Equal($"There was an error loading the certificate. The file 'c:\\nonexisting.pfx' was not found.", exception.Message);
+            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("./nonexisting.pfx", "", DefaultFlags));
+            Assert.Equal($"There was an error loading the certificate. The file './nonexisting.pfx' was not found.", exception.Message);
         }
 
         [Fact]
         public void LoadFromFile_ThrowsIfPasswordIsNull()
         {
             // Arrange, Act & Assert
-            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("test.pfx", null, X509KeyStorageFlags.DefaultKeySet));
+            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("test.pfx", null, DefaultFlags));
             Assert.Equal("There was an error loading the certificate. No password was provided.", exception.Message);
         }
 
@@ -32,9 +41,9 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         public void LoadFromFile_ThrowsIfPasswordIsIncorrect()
         {
             // Arrange, Act & Assert
-            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("test.pfx", "incorrect", X509KeyStorageFlags.DefaultKeySet));
+            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadFromFile("test.pfx", "incorrect", DefaultFlags));
             Assert.Equal(
-                "There was an error loading the certificate. Either the password is incorrect or the process does not have permisions to store the key in the Keyset 'DefaultKeySet'",
+                $"There was an error loading the certificate. Either the password is incorrect or the process does not have permisions to store the key in the Keyset '{DefaultFlags}'",
                 exception.Message);
         }
 
@@ -54,7 +63,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         {
             try
             {
-                SetupCertificates("current.pfx", "future.pfx");
+                SetupCertificates("./current.pfx", "./future.pfx");
                 // Arrange
                 var time = new DateTimeOffset(2018, 10, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -76,7 +85,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         {
             try
             {
-                SetupCertificates("current.pfx", "future.pfx");
+                SetupCertificates("./current.pfx", "./future.pfx");
                 // Arrange
                 var time = new DateTimeOffset(2020, 10, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -98,7 +107,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         {
             try
             {
-                SetupCertificates("expired.pfx", "current.pfx", "future.pfx");
+                SetupCertificates("./expired.pfx", "./current.pfx", "./future.pfx");
                 // Arrange
                 var time = new DateTimeOffset(2024, 01, 01, 12, 0, 0, TimeSpan.Zero);
 
@@ -119,8 +128,8 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         public static void LoadDevelopment_ThrowsIfKeyDoesNotExist()
         {
             // Act & Assert
-            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadDevelopment("c:\\inexistent.json", createIfMissing: false));
-            Assert.Equal("Couldn't find the file 'c:\\inexistent.json' and creation of a development key was not requested.", exception.Message);
+            var exception = Assert.Throws<InvalidOperationException>(() => SigningKeysLoader.LoadDevelopment("c:/inexistent.json", createIfMissing: false));
+            Assert.Equal("Couldn't find the file 'c:/inexistent.json' and creation of a development key was not requested.", exception.Message);
         }
 
         [ConditionalFact]
@@ -128,7 +137,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         public static void LoadDevelopment_CreatesKeyIfItDoesNotExist()
         {
             // Arrange
-            var path = ".\\tempkeyfolder\\tempkey.json";
+            var path = "./tempkeyfolder/tempkey.json";
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -147,7 +156,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
         public static void LoadDevelopment_ReusesKeyIfExists()
         {
             // Arrange
-            var path = ".\\tempkeyfolder\\existing.json";
+            var path = "./tempkeyfolder/existing.json";
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -182,7 +191,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer.Configuration
                 store.Open(OpenFlags.ReadWrite);
                 foreach (var certificate in certificateFiles)
                 {
-                    var cert = new X509Certificate2(certificate, "aspnetcore", X509KeyStorageFlags.DefaultKeySet);
+                    var cert = new X509Certificate2(certificate, "aspnetcore", DefaultFlags);
                     if (!(store.Certificates.Find(X509FindType.FindByThumbprint, cert.Thumbprint, validOnly: false).Count > 0))
                     {
                         store.Add(cert);

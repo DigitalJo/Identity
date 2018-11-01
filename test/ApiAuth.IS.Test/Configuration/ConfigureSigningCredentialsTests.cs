@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.Configuration;
@@ -13,6 +14,14 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer
 {
     public class ConfigureSigningCredentialsTests
     {
+        // We need to cast the underlying int value of the EphemeralKeySet to X509KeyStorageFlags
+        // due to the fact that is not part of .NET Standard. This value is only used with non-windows
+        // platforms (all .NET Core) for which the value is defined on the underlying platform.
+        private const X509KeyStorageFlags UnsafeEphemeralKeySet = (X509KeyStorageFlags)32;
+        private static readonly X509KeyStorageFlags DefaultFlags = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ?
+            X509KeyStorageFlags.DefaultKeySet :
+            X509KeyStorageFlags.DefaultKeySet;
+
         [ConditionalFact]
         [FrameworkSkipCondition(RuntimeFrameworks.CLR)]
         public void Configure_AddsDevelopmentKeyFromConfiguration()
@@ -88,7 +97,7 @@ namespace Microsoft.AspNetCore.ApiAuthorization.IdentityServer
             try
             {
                 // Arrange
-                var x509Certificate = new X509Certificate2("test.pfx", "aspnetcore", X509KeyStorageFlags.DefaultKeySet);
+                var x509Certificate = new X509Certificate2("test.pfx", "aspnetcore", DefaultFlags);
                 SetupTestCertificate(x509Certificate);
 
                 var configuration = new ConfigurationBuilder()
